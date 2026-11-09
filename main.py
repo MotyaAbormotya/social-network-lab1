@@ -1,6 +1,7 @@
 import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 class User:
     def __init__(self, id: int, name: str):
@@ -78,20 +79,24 @@ def load(path: Path) -> Data:
     return data
 
 def save(path: Path, data: Data):
-    if path.suffix.lower() == ".json":
-        groups = {}
-        for kind, rows in data.items():
-            groups[kind] = [vars(row) for row in rows.values()]
-        text = json.dumps(groups, ensure_ascii=False, indent=2)
-        path.write_text(text + "\n", encoding="utf-8", newline="\n")
-    else:
-        root = ET.Element("social_network")
-        for kind, rows in data.items():
-            for row in rows.values():
-                values = {key: str(val) for key, val in vars(row).items()}
-                ET.SubElement(root, kind[:-1], values)
-        ET.indent(root)
-        path.write_bytes(ET.tostring(root, encoding="utf-8") + b"\n")
+    with TemporaryDirectory(dir=path.parent) as folder:
+        temp = Path(folder) / path.name
+        if path.suffix.lower() == ".json":
+            groups = {}
+            for kind, rows in data.items():
+                groups[kind] = [vars(row) for row in rows.values()]
+            text = json.dumps(groups, ensure_ascii=False, indent=2)
+            temp.write_text(text + "\n", encoding="utf-8", newline="\n")
+        else:
+            root = ET.Element("social_network")
+            for kind, rows in data.items():
+                for row in rows.values():
+                    values = {key: str(val) for key, val in vars(row).items()}
+                    ET.SubElement(root, kind[:-1], values)
+            ET.indent(root)
+            temp.write_bytes(ET.tostring(root, encoding="utf-8") + b"\n")
+            ET.parse(temp)
+        temp.replace(path)
 
 def main():
     data: Data = {kind: {} for kind in TYPES}
