@@ -1,4 +1,5 @@
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 class User:
@@ -56,7 +57,15 @@ def delete_record(data: Data, kind: str, item_id: int):
     del data[kind][item_id]
 
 def load(path: Path) -> Data:
-    groups = json.loads(path.read_text(encoding="utf-8"))
+    if path.suffix.lower() == ".json":
+        groups = json.loads(path.read_text(encoding="utf-8"))
+    else:
+        root = ET.parse(path).getroot()
+        if root.tag != "social_network" or any(len(row) for row in root):
+            raise NetworkError("Неверная структура XML")
+        groups = {kind: [] for kind in TYPES}
+        for row in root:
+            groups[row.tag + "s"].append(row.attrib)
     data: Data = {kind: {} for kind in TYPES}
     for kind, rows in data.items():
         if not isinstance(groups[kind], list):
@@ -69,11 +78,20 @@ def load(path: Path) -> Data:
     return data
 
 def save(path: Path, data: Data):
-    groups = {}
-    for kind, rows in data.items():
-        groups[kind] = [vars(row) for row in rows.values()]
-    text = json.dumps(groups, ensure_ascii=False, indent=2)
-    path.write_text(text + "\n", encoding="utf-8", newline="\n")
+    if path.suffix.lower() == ".json":
+        groups = {}
+        for kind, rows in data.items():
+            groups[kind] = [vars(row) for row in rows.values()]
+        text = json.dumps(groups, ensure_ascii=False, indent=2)
+        path.write_text(text + "\n", encoding="utf-8", newline="\n")
+    else:
+        root = ET.Element("social_network")
+        for kind, rows in data.items():
+            for row in rows.values():
+                values = {key: str(val) for key, val in vars(row).items()}
+                ET.SubElement(root, kind[:-1], values)
+        ET.indent(root)
+        path.write_bytes(ET.tostring(root, encoding="utf-8") + b"\n")
 
 def main():
     data: Data = {kind: {} for kind in TYPES}
@@ -86,8 +104,8 @@ def main():
                 break
             if choice in ("5", "6"):
                 path = Path(input("Путь к файлу: ").strip())
-                if path.suffix.lower() != ".json":
-                    raise NetworkError("Укажи расширение .json")
+                if path.suffix.lower() not in (".json", ".xml"):
+                    raise NetworkError("Укажи расширение .json или .xml")
                 if choice == "5":
                     save(path, data)
                 else:
@@ -117,7 +135,7 @@ def main():
                 values["id"] = item_id
                 rows[item_id] = make_record(data, kind, values)
                 print(f"Сохранено, ID: {item_id}")
-        except (NetworkError, ValueError, OSError,
+        except (NetworkError, ValueError, OSError, ET.ParseError,
                 KeyError, TypeError) as error:
             print(f"Ошибка: {error}")
         except (EOFError, KeyboardInterrupt):
